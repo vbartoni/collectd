@@ -20,7 +20,7 @@
  * Authors:
  *   Florian octo Forster <octo at verplant.org>
  *   Manuel Sanmartin
- *   Vedran Bartonicek
+ *   Vedran Bartonicek <vbartoni at gmail.com>
  **/
 
 #define _BSD_SOURCE
@@ -28,6 +28,8 @@
 #include "collectd.h"
 #include "common.h"
 #include "plugin.h"
+#include "utils_ignorelist.h"
+
 
 #ifdef HAVE_SYS_LOADAVG_H
 #include <sys/loadavg.h>
@@ -98,7 +100,7 @@ static int get_cpu_cores()
     return 1;
 }
 
-static void load_submit (gauge_t snum, gauge_t mnum, gauge_t lnum)
+static void load_submit (gauge_t snum, gauge_t mnum, gauge_t lnum, char* type)
 {
 	value_t values[3];
 	value_list_t vl = VALUE_LIST_INIT;
@@ -111,15 +113,17 @@ static void load_submit (gauge_t snum, gauge_t mnum, gauge_t lnum)
 	vl.values_len = STATIC_ARRAY_SIZE (values);
 	sstrncpy (vl.host, hostname_g, sizeof (vl.host));
 	sstrncpy (vl.plugin, "load", sizeof (vl.plugin));
-	sstrncpy (vl.type, "load", sizeof (vl.type));
+	sstrncpy (vl.type, type, sizeof (vl.type));
 
 	plugin_dispatch_values (&vl);
 }
 
 static int load_read (void)
 {
-    gauge_t snum, mnum, lnum;
-    int cores;
+    gauge_t snum = 0;
+    gauge_t mnum = 0;
+    gauge_t lnum = 0;
+    int cores = get_cpu_cores();
     
 #if defined(HAVE_GETLOADAVG)
 	double load[3];
@@ -211,9 +215,9 @@ static int load_read (void)
 #else
 # error "No applicable input method."
 #endif
-	report_absolute_load == 1 ? load_submit (snum, mnum, lnum);
-	report_relative_load == 1 ? load_submit (snum/cores, mnum/cores, lnum/cores);
-
+	report_absolute_load ? load_submit(snum, mnum, lnum, "load") : 0;
+	(report_relative_load && (cores > 0)) ? WARNING ("load") : 0;
+	load_submit(snum/cores, mnum/cores, lnum/cores, "load_relative");
 	return (0);
 }
 
