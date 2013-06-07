@@ -30,6 +30,7 @@
 #include "plugin.h"
 #include "utils_ignorelist.h"
 
+#include <unistd.h>
 
 #ifdef HAVE_SYS_LOADAVG_H
 #include <sys/loadavg.h>
@@ -79,25 +80,25 @@ static int load_init (void)
 static int load_config (const char *key, const char *value)
 {
 	load_init ();
-
+	
 	if (strcasecmp (key, "ReportAbsoluteLoad") == 0)
-	{
-		if (ignorelist_add (il_absolute, value))
-			return (1);
-		return (0);
-	}
+		report_absolute_load = IS_TRUE (value) ? 1 : 0;
+	
 	else if (strcasecmp (key, "ReportRelativeLoad") == 0)
-	{
-		if (ignorelist_add (il_relative, value))
-			return (1);
-		return (0);
-	}
+		report_relative_load = IS_TRUE (value) ? 1 : 0;
+
 	return (-1);
 
 }
-static int get_cpu_cores()
+static int cpu_cores()
 {
-    return 1;
+	int cores =  sysconf(_SC_NPROCESSORS_ONLN);
+	if (cores < 1){
+		char errbuf[1024];
+		 WARNING ("load: sysconf failed : %s",
+				sstrerror (errno, errbuf, sizeof (errbuf)));
+	}
+	return cores;
 }
 
 static void load_submit (gauge_t snum, gauge_t mnum, gauge_t lnum, char* type)
@@ -123,7 +124,7 @@ static int load_read (void)
     gauge_t snum = 0;
     gauge_t mnum = 0;
     gauge_t lnum = 0;
-    int cores = get_cpu_cores();
+    int cores = cpu_cores();
     
 #if defined(HAVE_GETLOADAVG)
 	double load[3];
@@ -154,6 +155,7 @@ static int load_read (void)
 		char errbuf[1024];
 		WARNING ("load: fopen: %s",
 				sstrerror (errno, errbuf, sizeof (errbuf)));
+		fclose (loadavg);
 		return (-1);
 	}
 
@@ -215,9 +217,11 @@ static int load_read (void)
 #else
 # error "No applicable input method."
 #endif
-	report_absolute_load ? load_submit(snum, mnum, lnum, "load") : 0;
-	(report_relative_load && (cores > 0)) ? WARNING ("load") : 0;
-	load_submit(snum/cores, mnum/cores, lnum/cores, "load_relative");
+	if (report_absolute_load)
+		load_submit(snum, mnum, lnum, "load");
+	if (report_relative_load && cores > 0) 
+		load_submit(snum/cores, mnum/cores, lnum/cores, "load_relative");
+
 	return (0);
 }
 
