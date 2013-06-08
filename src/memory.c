@@ -153,7 +153,11 @@ static void memory_submit (const char *type_instance, gauge_t value)
 
 static int memory_read (void)
 {
+	
+		DEBUG ("memory_read ENTER");
+
 #if HAVE_HOST_STATISTICS
+	DEBUG ("HAVE_HOST_STATISTICS");
 	kern_return_t status;
 	vm_statistics_data_t   vm_data;
 	mach_msg_type_number_t vm_data_len;
@@ -207,6 +211,8 @@ static int memory_read (void)
 /* #endif HAVE_HOST_STATISTICS */
 
 #elif HAVE_SYSCTLBYNAME
+	DEBUG ("HAVE_SYSCTLBYNAME");
+
 	/*
 	 * vm.stats.vm.v_page_size: 4096
 	 * vm.stats.vm.v_page_count: 246178
@@ -261,6 +267,8 @@ static int memory_read (void)
 /* #endif HAVE_SYSCTLBYNAME */
 
 #elif KERNEL_LINUX
+	DEBUG ("KERNEL_LINUX");
+
 	FILE *fh;
 	char buffer[1024];
 
@@ -271,6 +279,8 @@ static int memory_read (void)
 	long long mem_buffered = 0;
 	long long mem_cached = 0;
 	long long mem_free = 0;
+	long long mem_available = 0;
+	long long mem_total = 0;
 
 	if ((fh = fopen ("/proc/meminfo", "r")) == NULL)
 	{
@@ -309,18 +319,25 @@ static int memory_read (void)
 		WARNING ("memory: fclose: %s",
 				sstrerror (errno, errbuf, sizeof (errbuf)));
 	}
-
-	if (mem_used >= (mem_free + mem_buffered + mem_cached))
+	
+	mem_available = mem_free + mem_buffered + mem_cached;
+	mem_total = mem_used;
+	
+	if (mem_used >= mem_available && mem_total > 0)
 	{
-		mem_used -= mem_free + mem_buffered + mem_cached;
-		memory_submit ("used",     mem_used);
-		memory_submit ("buffered", mem_buffered);
-		memory_submit ("cached",   mem_cached);
-		memory_submit ("free",     mem_free);
+		mem_used -= mem_available;
+		memory_submit ("used",      mem_used);
+		memory_submit ("buffered",  mem_buffered);
+		memory_submit ("cached",    mem_cached);
+		memory_submit ("free",      mem_free);
+		memory_submit ("available", mem_available);
+		memory_submit ("available_pct", mem_available * 100 / mem_total);
 	}
 /* #endif KERNEL_LINUX */
 
 #elif HAVE_LIBKSTAT
+	DEBUG ("HAVE_LIBKSTAT");
+
         /* Most of the additions here were taken as-is from the k9toolkit from
          * Brendan Gregg and are subject to change I guess */
 	long long mem_used;
@@ -397,6 +414,8 @@ static int memory_read (void)
 /* #endif HAVE_LIBKSTAT */
 
 #elif HAVE_SYSCTL
+	DEBUG ("HAVE_SYSCTL");
+
 	int mib[] = {CTL_VM, VM_METER};
 	struct vmtotal vmtotal;
 	size_t size;
@@ -418,6 +437,8 @@ static int memory_read (void)
 /* #endif HAVE_SYSCTL */
 
 #elif HAVE_LIBSTATGRAB
+	DEBUG ("HAVE_LIBSTATGRAB");
+
 	sg_mem_stats *ios;
 
 	if ((ios = sg_get_mem_stats ()) != NULL)
@@ -429,6 +450,8 @@ static int memory_read (void)
 /* #endif HAVE_LIBSTATGRAB */
 
 #elif HAVE_PERFSTAT
+	DEBUG ("HAVE_PERFSTAT");
+
 	if (perfstat_memory_total(NULL, &pmemory, sizeof(perfstat_memory_total_t), 1) < 0)
 	{
 		char errbuf[1024];
